@@ -22,7 +22,7 @@ fn main(){
         }
         String::from(" ")
     };
-    let data = ... // what ever kind of input data as long as it implements Document
+    let data: Vec<String> = ... // what ever kind of input data as long as its a Vec<T> where T is bounded by Document
     let model = Model::construct(data, capture);
     let res = model.search(String::from("12"),capture);
     
