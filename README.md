@@ -3,7 +3,7 @@ implementation of the vector space model for search
 
 based on [Scoring, term weighting and the vector space model](https://nlp.stanford.edu/IR-book/html/htmledition/scoring-term-weighting-and-the-vector-space-model-1.html) over at Standfords npl dep
 
-#Use: 
+# Use: 
 ```Rust
 // Implement Document trait for some type 
 impl Document for String {
