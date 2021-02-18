@@ -44,7 +44,7 @@ impl Document for String {
 }
 
 impl<T> Model<T> where T: Document + Debug + Clone {
-    fn preprocess(doc: &T, func: fn(cap: &Captures) -> String) -> Vec<String> {
+    pub fn preprocess(doc: &T, func: fn(cap: &Captures) -> String) -> Vec<String> {
         String::from(PROCESSING_REGEX.replace_all(&doc.get_data(), func))
             .split(" ")
             .map(|data| String::from(data).to_lowercase())
@@ -52,7 +52,7 @@ impl<T> Model<T> where T: Document + Debug + Clone {
             .collect::<Vec<_>>()
     }
 
-    fn build_query_weights(&self, query_vec: Vec<i32>) -> Vec<f64> {
+    pub fn build_query_weights(&self, query_vec: Vec<i32>) -> Vec<f64> {
         let mut x = 0usize;
         query_vec.iter().map(|term| {
             if *term == 0 { return 0f64; }
@@ -66,7 +66,7 @@ impl<T> Model<T> where T: Document + Debug + Clone {
         }).collect::<Vec<f64>>()
     }
 
-    fn search(self, query: String, processing_capture: fn(cap: &Captures) -> String) -> Vec<(T, f64)> {
+    pub fn search(self, query: String, processing_capture: fn(cap: &Captures) -> String) -> Vec<(T, f64)> {
         let preprocessed = Model::preprocess(&query, processing_capture);
 
         let mut query_vec = vec![0; self.vector_length];
@@ -94,24 +94,24 @@ impl<T> Model<T> where T: Document + Debug + Clone {
         vec.iter().map(|item| { (self.documents[item.1].clone(), item.0) }).collect::<Vec<_>>()
     }
 
-    fn calc_idf(term_df: u64, total_items: usize) -> f64 {
+    pub fn calc_idf(term_df: u64, total_items: usize) -> f64 {
         (total_items as f64 / term_df as f64).log10()
     }
 
-    fn calc_tf_idf(term_frequency: usize, idf: f64) -> f64 {
+    pub fn calc_tf_idf(term_frequency: usize, idf: f64) -> f64 {
         if term_frequency == 0 { return 0f64; }
         (1f64 + (term_frequency as f64).log10()) * idf
     }
 
-    fn calc_query_tf(term: &i32) -> f64 {
+    pub fn calc_query_tf(term: &i32) -> f64 {
         (1.0 + (*term as f64).log10())
     }
 
-    fn calc_query_idf(num_docs: usize, doc_freq: u64) -> f64 {
+    pub fn calc_query_idf(num_docs: usize, doc_freq: u64) -> f64 {
         (num_docs as f64 / doc_freq as f64).log10()
     }
 
-    fn euclidean_len(v: Vec<f64>) -> f64 {
+    pub fn euclidean_len(v: Vec<f64>) -> f64 {
         let mut result = 0.0;
         for item in v {
             result += item.powi(2);
@@ -119,7 +119,7 @@ impl<T> Model<T> where T: Document + Debug + Clone {
         result.sqrt()
     }
 
-    fn sim(query: Vec<f64>, doc: Vec<f64>) -> f64 {
+    pub fn sim(query: Vec<f64>, doc: Vec<f64>) -> f64 {
         let q_len = Model::<T>::euclidean_len(query.clone());
         let d_len = Model::<T>::euclidean_len(doc.clone());
 
