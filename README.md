@@ -15,7 +15,7 @@ impl Document for String {
 
 
 fn main(){
-    //Define a capture for regex alternative is to just have the capture return a empty string 
+    //Define a capture for regex, alternative is to just have the capture return a empty string 
     let capture = |cap: &Captures| {
         if cap.get(2).is_some() {
             return format!("{} {}", &cap[3], &cap[4]);
@@ -24,7 +24,7 @@ fn main(){
     };
     let data: Vec<String> = ... // what ever kind of input data as long as its a Vec<T> where T is bounded by Document
     let processing_regex:Regex = Regex::new(r"(x|\.)|((\d+)(mm))|([^A-Za-z0-9])").unwrap();
-    let model = Model::construct(data, capture,processing_regex);
+    let model = Model::construct(data, capture, processing_regex);
     let res = model.search(String::from("12"));
     
     println!("{:#?}",res)
