@@ -16,21 +16,9 @@ pub struct Model<T> {
     document_weights: Vec<Vec<f64>>,
     term_frequencies: Vec<Vec<usize>>,
     document_frequency: Vec<u64>,
-    dictionary: HashSet<String, RandomStateCustom>,
-    index: HashMap<String, usize, RandomStateCustom>,
+    dictionary: HashSet<String>,
+    index: HashMap<String, usize>,
     documents: Vec<T>,
-}
-
-#[derive(Clone, Default)]
-pub struct RandomStateCustom {} // TODO: REMOVE FIXED RANDOMSTATE
-
-impl BuildHasher for RandomStateCustom {
-    // TODO: REMOVE FIXED RANDOMSTATE
-    type Hasher = DefaultHasher;
-    // TODO: REMOVE FIXED RANDOMSTATE
-    fn build_hasher(&self) -> DefaultHasher {// TODO: REMOVE FIXED RANDOMSTATE
-        DefaultHasher::new() // TODO: REMOVE FIXED RANDOMSTATE
-    }
 }
 
 pub trait Document {
@@ -137,13 +125,12 @@ impl<T> Model<T> where T: Document + Debug + Clone {
 
         let mut dictionary = processed.clone().drain(..)
             .flatten()
-            .collect::<HashSet<_, RandomStateCustom>>();
+            .collect::<HashSet<_>>();
 
         let num_docs = documents.len();
         let vector_len = dictionary.len();
-        let random_state = RandomStateCustom {}; // TODO: REMOVE FIXED RANDOMSTATE
 
-        let mut index = HashMap::with_hasher(random_state);
+        let mut index = HashMap::new();
 
         let mut i = 0usize;
         dictionary.iter().for_each(
