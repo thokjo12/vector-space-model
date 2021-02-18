@@ -6,10 +6,6 @@ use std::hash::{BuildHasher};
 use std::fmt::Debug;
 use std::iter;
 
-lazy_static! {
-    static ref PROCESSING_REGEX:Regex = Regex::new(r"(x|\.)|((\d+)(mm))|([^A-Za-z0-9])").unwrap();
-}
-
 pub struct Model<T> {
     vector_length: usize,
     corpus_size: usize,
@@ -19,6 +15,8 @@ pub struct Model<T> {
     dictionary: HashSet<String>,
     index: HashMap<String, usize>,
     documents: Vec<T>,
+    capture: fn(cap: &Captures) -> String,
+    processing_regex: Regex,
 }
 
 pub trait Document {
@@ -31,31 +29,32 @@ impl Document for String {
     }
 }
 
+
 impl<T> Model<T> where T: Document + Debug + Clone {
-    pub fn preprocess(doc: &T, func: fn(cap: &Captures) -> String) -> Vec<String> {
-        String::from(PROCESSING_REGEX.replace_all(&doc.get_data(), func))
-            .split(" ")
+    pub fn preprocess(doc: &T, func: fn(cap: &Captures) -> String, processing_regex: Regex) -> Vec<String> {
+        String::from(processing_regex.replace_all(&doc.get_data(), func).clone())
+            .split(" ").clone()
             .map(|data| String::from(data).to_lowercase())
             .filter(|data| data != "" && data != " ")
             .collect::<Vec<_>>()
     }
 
-    pub fn build_query_weights(&self, query_vec: Vec<i32>) -> Vec<f64> {
-        let mut x = 0usize;
-        query_vec.iter().map(|term| {
+    pub fn build_query_weights(&self, query_vec: &[i32]) -> Vec<f64> {
+        query_vec.iter().enumerate().map(|(i, term)| {
             if *term == 0 { return 0f64; }
-            let res =
-                Model::<T>::calc_query_tf(term) * Model::<T>::calc_query_idf(
-                    self.documents.len(),
-                    self.document_frequency[x],
-                );
-            x += 1;
-            res
+            Model::<T>::calc_query_tf(term) * Model::<T>::calc_query_idf(
+                self.documents.len(),
+                self.document_frequency[i],
+            )
         }).collect::<Vec<f64>>()
     }
 
-    pub fn search(self, query: String, processing_capture: fn(cap: &Captures) -> String) -> Vec<(T, f64)> {
-        let preprocessed = Model::preprocess(&query, processing_capture);
+    pub fn search(&self, query: String) -> Vec<(T, f64)> {
+        let preprocessed = Model::preprocess(
+            &query,
+            self.capture,
+            self.processing_regex.clone(),
+        );
 
         let mut query_vec = vec![0; self.vector_length];
 
@@ -67,13 +66,11 @@ impl<T> Model<T> where T: Document + Debug + Clone {
 
 
         //calc query weight
-        let query_weight = self.build_query_weights(query_vec);
+        let query_weight = self.build_query_weights(&query_vec);
 
         //calculate sim
-        let mut doc_i = 0usize;
-        let mut vec = self.document_weights.iter().map(|doc| {
-            let res = (Model::<T>::sim(query_weight.clone(), doc.clone()), doc_i);
-            doc_i += 1;
+        let mut vec = self.document_weights.iter().enumerate().map(|(i, doc)| {
+            let res = (Model::<T>::sim(&query_weight, doc), i);
             res
         }).collect::<Vec<(f64, usize)>>();
 
@@ -99,7 +96,7 @@ impl<T> Model<T> where T: Document + Debug + Clone {
         (num_docs as f64 / doc_freq as f64).log10()
     }
 
-    pub fn euclidean_len(v: Vec<f64>) -> f64 {
+    pub fn euclidean_len(v: &[f64]) -> f64 {
         let mut result = 0.0;
         for item in v {
             result += item.powi(2);
@@ -107,20 +104,17 @@ impl<T> Model<T> where T: Document + Debug + Clone {
         result.sqrt()
     }
 
-    pub fn sim(query: Vec<f64>, doc: Vec<f64>) -> f64 {
-        let q_len = Model::<T>::euclidean_len(query.clone());
-        let d_len = Model::<T>::euclidean_len(doc.clone());
+    pub fn sim(query: &[f64], doc: &[f64]) -> f64 {
+        let q_len = Model::<T>::euclidean_len(&query);
+        let d_len = Model::<T>::euclidean_len(&doc);
 
-        let mut res = 0.0;
-        for i in 0..query.len() {
-            res += (&query[i] / q_len) * (&doc[i] / d_len);
-        }
-        res
+        query.iter().enumerate().map(|(i, term)| (term / q_len) * (doc[i] / d_len))
+            .sum::<f64>()
     }
 
-    pub fn construct(documents: Vec<T>, processing_capture: fn(cap: &Captures) -> String) -> Self {
+    pub fn construct(documents: Vec<T>, processing_capture: fn(cap: &Captures) -> String, processing_regex: Regex) -> Self {
         let processed = documents.iter().map(|doc| {
-            Model::preprocess(doc, processing_capture)
+            Model::preprocess(doc, processing_capture, processing_regex.clone())
         }).collect::<Vec<_>>();
 
         let mut dictionary = processed.clone().drain(..)
@@ -130,20 +124,16 @@ impl<T> Model<T> where T: Document + Debug + Clone {
         let num_docs = documents.len();
         let vector_len = dictionary.len();
 
-        let mut index = HashMap::new();
-
-        let mut i = 0usize;
-        dictionary.iter().for_each(
-            |item| {
-                index.insert(item.clone(), i);
-                i += 1;
-            }
-        );
-
+        let mut document_frequency = vec![0; vector_len];
         let mut term_frequencies: Vec<Vec<usize>> = iter::repeat_with(|| vec![0; vector_len])
             .take(num_docs)
             .collect();
-        let mut document_frequency = vec![0; vector_len];
+
+        let mut index = dictionary.iter().enumerate().map(
+            |(i, item)| {
+                (item.clone(), i)
+            }
+        ).collect::<HashMap<_, _>>();
 
 
         // built term frequency and document frequency
@@ -160,13 +150,11 @@ impl<T> Model<T> where T: Document + Debug + Clone {
 
         // calc document weights
         let document_weights = term_frequencies.iter().map(|document| {
-            let mut ind = 0usize;
-            document.iter().map(|tf| {
+            document.iter().enumerate().map(|(i, tf)| {
                 let idf = Model::<T>::calc_idf(
-                    document_frequency[ind],
+                    document_frequency[i],
                     documents.len(),
                 );
-                ind += 1;
                 Model::<T>::calc_tf_idf(*tf, idf)
             }).collect::<Vec<_>>()
         }).collect::<Vec<Vec<f64>>>();
@@ -180,6 +168,8 @@ impl<T> Model<T> where T: Document + Debug + Clone {
             dictionary,
             index,
             documents,
+            capture: processing_capture,
+            processing_regex,
         }
     }
 }

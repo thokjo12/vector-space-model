@@ -23,10 +23,13 @@ fn main(){
         String::from(" ")
     };
     let data: Vec<String> = ... // what ever kind of input data as long as its a Vec<T> where T is bounded by Document
-    let model = Model::construct(data, capture);
-    let res = model.search(String::from("12"),capture);
+    let processing_regex:Regex = Regex::new(r"(x|\.)|((\d+)(mm))|([^A-Za-z0-9])").unwrap();
+    let model = Model::construct(data, capture,processing_regex);
+    let res = model.search(String::from("12"));
     
-    println!("{:?}",res)
+    println!("{:#?}",res)
+    
+    //Output will be on the form (Document, score)
 }
 
 ```
