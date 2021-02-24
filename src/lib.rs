@@ -1,14 +1,10 @@
 use regex::{Regex, Captures};
 use std::collections::{HashSet, HashMap};
-use lazy_static::lazy_static;
-use std::collections::hash_map::{RandomState, DefaultHasher};
-use std::hash::{BuildHasher};
 use std::fmt::Debug;
 use std::iter;
 
 pub struct Model<T> {
     vector_length: usize,
-    corpus_size: usize,
     document_weights: Vec<Vec<f64>>,
     term_frequencies: Vec<Vec<usize>>,
     document_frequency: Vec<u64>,
@@ -17,6 +13,7 @@ pub struct Model<T> {
     documents: Vec<T>,
     capture: fn(cap: &Captures) -> String,
     processing_regex: Regex,
+    queued_for_indexing: Vec<T>,
 }
 
 pub trait Document {
@@ -31,7 +28,13 @@ impl Document for String {
 
 
 impl<T> Model<T> where T: Document + Debug + Clone {
-    pub fn preprocess(doc: &T, func: fn(cap: &Captures) -> String, processing_regex: Regex) -> Vec<String> {
+    pub fn index() {}
+
+    pub fn insert_docs(&mut self, docs: Vec<T>) {
+        self.queued_for_indexing.extend(docs);
+    }
+
+    pub fn preprocess(doc: &T, func: &fn(cap: &Captures) -> String, processing_regex: &Regex) -> Vec<String> {
         String::from(processing_regex.replace_all(&doc.get_data(), func).clone())
             .split(" ").clone()
             .map(|data| String::from(data).to_lowercase())
@@ -52,8 +55,8 @@ impl<T> Model<T> where T: Document + Debug + Clone {
     pub fn search(&self, query: String) -> Vec<(T, f64)> {
         let preprocessed = Model::preprocess(
             &query,
-            self.capture,
-            self.processing_regex.clone(),
+            &self.capture,
+            &self.processing_regex.clone(),
         );
 
         let mut query_vec = vec![0; self.vector_length];
@@ -89,7 +92,7 @@ impl<T> Model<T> where T: Document + Debug + Clone {
     }
 
     pub fn calc_query_tf(term: &i32) -> f64 {
-        (1.0 + (*term as f64).log10())
+        1.0 + (*term as f64).log10()
     }
 
     pub fn calc_query_idf(num_docs: usize, doc_freq: u64) -> f64 {
@@ -97,14 +100,13 @@ impl<T> Model<T> where T: Document + Debug + Clone {
     }
 
     pub fn euclidean_len(v: &[f64]) -> f64 {
-        let mut result = 0.0;
-        for item in v {
-            result += item.powi(2);
-        }
-        result.sqrt()
+        v.iter().fold(0.0, |acc, elm| acc + elm.powi(2)).sqrt()
     }
 
     pub fn sim(query: &[f64], doc: &[f64]) -> f64 {
+
+
+
         let q_len = Model::<T>::euclidean_len(&query);
         let d_len = Model::<T>::euclidean_len(&doc);
 
@@ -112,12 +114,80 @@ impl<T> Model<T> where T: Document + Debug + Clone {
             .sum::<f64>()
     }
 
+    // pub fn update_index(&mut self) { // TODO refactor and extract processing into separate functions for reuse in construct and update_index.
+    //     if self.queued_for_indexing.is_empty() {
+    //         println!("No documents queued");
+    //         return;
+    //     }
+    //
+    //     let capture = &self.capture;
+    //     let reg = &self.processing_regex;
+    //
+    //     self.documents.extend(self.queued_for_indexing.clone());
+    //     let doc_count = self.queued_for_indexing.len();
+    //     let processed = self.queued_for_indexing
+    //         .drain(..)
+    //         .map(|doc| Model::<T>::preprocess(&doc, capture, reg))
+    //         .collect::<Vec<_>>();
+    //
+    //     let tmp_dict = processed.clone()
+    //         .drain(..)
+    //         .flatten()
+    //         .collect::<HashSet<_>>();
+    //
+    //     // find intersection of tmp dict and self.dict and remove those.
+    //
+    //     self.dictionary.extend(tmp_dict);
+    //
+    //     // let vector_length = tmp_dict.len();
+    //
+    //     let mut document_frequency = vec![0; vector_length];
+    //     let mut term_frequencies: Vec<Vec<usize>> = iter::repeat_with(|| vec![0; vector_length])
+    //         .take(num_docs)
+    //         .collect();
+    //
+    //
+    //     self.index = self.dictionary
+    //         .clone()
+    //         .iter()
+    //         .enumerate()
+    //         .map(|(i, item)| { (item.clone(), i) })
+    //         .collect::<HashMap<_, _>>();
+    //
+    //     for i in 0..doc_count{
+    //         for term in processed[i].iter(){
+    //             let term_index = self.index.get(term).unwrap().clone();
+    //             if term_frequencies[i][term_index] == 0{
+    //                 document_frequency[term_index] += 1;
+    //             }
+    //             term_frequencies[i][term_index] += 1;
+    //         }
+    //     }
+    //
+    //
+    //     // reconstruct the model.
+    //     //extend self vars with the above.
+    //
+    // }
+
+    pub fn calculate_document_weights(&mut self) {
+        self.document_weights = self.term_frequencies.iter().map(|document| {
+            document.iter().enumerate().map(|(i, tf)| {
+                let idf = Model::<T>::calc_idf(
+                    self.document_frequency[i],
+                    self.documents.len(),
+                );
+                Model::<T>::calc_tf_idf(*tf, idf)
+            }).collect::<Vec<_>>()
+        }).collect::<Vec<Vec<f64>>>();
+    }
+
     pub fn construct(documents: Vec<T>, processing_capture: fn(cap: &Captures) -> String, processing_regex: Regex) -> Self {
         let processed = documents.iter().map(|doc| {
-            Model::preprocess(doc, processing_capture, processing_regex.clone())
+            Model::preprocess(doc, &processing_capture, &processing_regex.clone())
         }).collect::<Vec<_>>();
 
-        let mut dictionary = processed.clone().drain(..)
+        let dictionary = processed.clone().drain(..)
             .flatten()
             .collect::<HashSet<_>>();
 
@@ -129,7 +199,7 @@ impl<T> Model<T> where T: Document + Debug + Clone {
             .take(num_docs)
             .collect();
 
-        let mut index = dictionary.iter().enumerate().map(
+        let index = dictionary.iter().enumerate().map(
             |(i, item)| {
                 (item.clone(), i)
             }
@@ -147,29 +217,20 @@ impl<T> Model<T> where T: Document + Debug + Clone {
             }
         }
 
-
-        // calc document weights
-        let document_weights = term_frequencies.iter().map(|document| {
-            document.iter().enumerate().map(|(i, tf)| {
-                let idf = Model::<T>::calc_idf(
-                    document_frequency[i],
-                    documents.len(),
-                );
-                Model::<T>::calc_tf_idf(*tf, idf)
-            }).collect::<Vec<_>>()
-        }).collect::<Vec<Vec<f64>>>();
-
-        Self {
+        let mut model = Self {
             vector_length: vector_len,
-            corpus_size: documents.len(),
-            document_weights,
+            capture: processing_capture,
+            queued_for_indexing: vec![],
+            document_weights:vec![],
             term_frequencies,
             document_frequency,
             dictionary,
             index,
             documents,
-            capture: processing_capture,
             processing_regex,
-        }
+        };
+
+        model.calculate_document_weights();
+        model
     }
 }
