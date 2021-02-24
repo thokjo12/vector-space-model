@@ -4,16 +4,16 @@ use std::fmt::Debug;
 use std::iter;
 
 pub struct Model<T> {
-    vector_length: usize,
-    document_weights: Vec<Vec<f64>>,
-    term_frequencies: Vec<Vec<usize>>,
-    document_frequency: Vec<u64>,
-    dictionary: HashSet<String>,
-    index: HashMap<String, usize>,
-    documents: Vec<T>,
-    capture: fn(cap: &Captures) -> String,
-    processing_regex: Regex,
-    queued_for_indexing: Vec<T>,
+    pub vector_length: usize,
+    pub document_weights: Vec<Vec<f64>>,
+    pub term_frequencies: Vec<Vec<usize>>,
+    pub document_frequency: Vec<u64>,
+    pub dictionary: HashSet<String>,
+    pub index: HashMap<String, usize>,
+    pub documents: Vec<T>,
+    pub capture: fn(cap: &Captures) -> String,
+    pub processing_regex: Regex,
+    pub queued_for_indexing: Vec<T>,
 }
 
 pub trait Document {
